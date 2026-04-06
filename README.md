@@ -65,7 +65,7 @@ Dies ist eine grundlegende Version eines Visualisierungssystems für den Geograp
 
 ---
 
-## 📷 Preview
+
 
 # 🌍 Ocean Currents & Marine Geography Visualization
 
