@@ -97,6 +97,12 @@ const cameraState = {
   dragStartClientY: 0,
   dragStartX: 0,
   dragStartY: 0,
+  activePointers: new Map(),
+  pinchStartDistance: 0,
+  pinchStartWidth: svgSize.width,
+  pinchStartHeight: svgSize.height,
+  pinchWorldFocusX: 0,
+  pinchWorldFocusY: 0,
 };
 
 const teachingModal = document.getElementById("teaching-modal");
@@ -1360,6 +1366,86 @@ function zoomCameraAtPoint(clientX, clientY, zoomFactor) {
   applyCamera();
 }
 
+function getCameraFocusRatios(clientX, clientY) {
+  if (!zoomContainer) {
+    return null;
+  }
+
+  const rect = zoomContainer.getBoundingClientRect();
+
+  if (!rect.width || !rect.height) {
+    return null;
+  }
+
+  return {
+    rect,
+    focusRatioX: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+    focusRatioY: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
+  };
+}
+
+function getActiveCameraPointers() {
+  return Array.from(cameraState.activePointers.values()).sort(
+    (left, right) => left.pointerId - right.pointerId
+  );
+}
+
+function beginCameraDrag(pointer) {
+  cameraState.isDragging = true;
+  cameraState.pointerId = pointer.pointerId;
+  cameraState.dragStartClientX = pointer.clientX;
+  cameraState.dragStartClientY = pointer.clientY;
+  cameraState.dragStartX = cameraState.x;
+  cameraState.dragStartY = cameraState.y;
+  cameraState.pinchStartDistance = 0;
+  zoomContainer.classList.add("is-dragging");
+  document.body.classList.add("is-camera-dragging");
+}
+
+function beginCameraPinch() {
+  const pointers = getActiveCameraPointers();
+
+  if (pointers.length < 2) {
+    return;
+  }
+
+  const [firstPointer, secondPointer] = pointers;
+  const focus = getCameraFocusRatios(
+    (firstPointer.clientX + secondPointer.clientX) / 2,
+    (firstPointer.clientY + secondPointer.clientY) / 2
+  );
+
+  if (!focus) {
+    return;
+  }
+
+  cameraState.isDragging = false;
+  cameraState.pointerId = null;
+  cameraState.pinchStartDistance = Math.max(
+    1,
+    Math.hypot(
+      firstPointer.clientX - secondPointer.clientX,
+      firstPointer.clientY - secondPointer.clientY
+    )
+  );
+  cameraState.pinchStartWidth = cameraState.width;
+  cameraState.pinchStartHeight = cameraState.height;
+  cameraState.pinchWorldFocusX =
+    cameraState.x + cameraState.width * focus.focusRatioX;
+  cameraState.pinchWorldFocusY =
+    cameraState.y + cameraState.height * focus.focusRatioY;
+  zoomContainer.classList.add("is-dragging");
+  document.body.classList.add("is-camera-dragging");
+}
+
+function clearCameraInteraction() {
+  cameraState.isDragging = false;
+  cameraState.pointerId = null;
+  cameraState.pinchStartDistance = 0;
+  zoomContainer.classList.remove("is-dragging");
+  document.body.classList.remove("is-camera-dragging");
+}
+
 function initializeCameraControls() {
   if (!svgMap || !zoomContainer) {
     return;
@@ -1378,7 +1464,7 @@ function initializeCameraControls() {
   );
 
   zoomContainer.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) {
+    if (event.pointerType === "mouse" && event.button !== 0) {
       return;
     }
 
@@ -1389,18 +1475,72 @@ function initializeCameraControls() {
       return;
     }
 
-    cameraState.isDragging = true;
-    cameraState.pointerId = event.pointerId;
-    cameraState.dragStartClientX = event.clientX;
-    cameraState.dragStartClientY = event.clientY;
-    cameraState.dragStartX = cameraState.x;
-    cameraState.dragStartY = cameraState.y;
-    zoomContainer.classList.add("is-dragging");
-    document.body.classList.add("is-camera-dragging");
+    const pointer = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+
+    cameraState.activePointers.set(event.pointerId, pointer);
     zoomContainer.setPointerCapture(event.pointerId);
+
+    if (cameraState.activePointers.size === 1) {
+      beginCameraDrag(pointer);
+      return;
+    }
+
+    if (cameraState.activePointers.size >= 2) {
+      beginCameraPinch();
+    }
   });
 
   zoomContainer.addEventListener("pointermove", (event) => {
+    if (!cameraState.activePointers.has(event.pointerId)) {
+      return;
+    }
+
+    cameraState.activePointers.set(event.pointerId, {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+
+    if (cameraState.activePointers.size >= 2) {
+      const pointers = getActiveCameraPointers();
+      const [firstPointer, secondPointer] = pointers;
+      const focus = getCameraFocusRatios(
+        (firstPointer.clientX + secondPointer.clientX) / 2,
+        (firstPointer.clientY + secondPointer.clientY) / 2
+      );
+
+      if (!focus || !cameraState.pinchStartDistance) {
+        return;
+      }
+
+      const currentDistance = Math.max(
+        1,
+        Math.hypot(
+          firstPointer.clientX - secondPointer.clientX,
+          firstPointer.clientY - secondPointer.clientY
+        )
+      );
+      const zoomFactor = cameraState.pinchStartDistance / currentDistance;
+
+      cameraState.width = Math.max(
+        cameraState.minWidth,
+        Math.min(cameraState.maxWidth, cameraState.pinchStartWidth * zoomFactor)
+      );
+      cameraState.height =
+        (cameraState.width * svgSize.height) / svgSize.width;
+      cameraState.x =
+        cameraState.pinchWorldFocusX - cameraState.width * focus.focusRatioX;
+      cameraState.y =
+        cameraState.pinchWorldFocusY - cameraState.height * focus.focusRatioY;
+
+      applyCamera();
+      return;
+    }
+
     if (!cameraState.isDragging || event.pointerId !== cameraState.pointerId) {
       return;
     }
@@ -1418,21 +1558,24 @@ function initializeCameraControls() {
   });
 
   const stopDragging = (event) => {
-    if (cameraState.pointerId !== null && event.pointerId !== cameraState.pointerId) {
+    cameraState.activePointers.delete(event.pointerId);
+
+    if (zoomContainer.hasPointerCapture(event.pointerId)) {
+      zoomContainer.releasePointerCapture(event.pointerId);
+    }
+
+    if (cameraState.activePointers.size >= 2) {
+      beginCameraPinch();
       return;
     }
 
-    if (
-      cameraState.pointerId !== null &&
-      zoomContainer.hasPointerCapture(cameraState.pointerId)
-    ) {
-      zoomContainer.releasePointerCapture(cameraState.pointerId);
+    if (cameraState.activePointers.size === 1) {
+      const [remainingPointer] = getActiveCameraPointers();
+      beginCameraDrag(remainingPointer);
+      return;
     }
 
-    cameraState.isDragging = false;
-    cameraState.pointerId = null;
-    zoomContainer.classList.remove("is-dragging");
-    document.body.classList.remove("is-camera-dragging");
+    clearCameraInteraction();
   };
 
   zoomContainer.addEventListener("pointerup", stopDragging);
