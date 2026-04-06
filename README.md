@@ -67,7 +67,7 @@ Dies ist eine grundlegende Version eines Visualisierungssystems für den Geograp
 
 ## 📷 Preview
 
-![preview](./img/preview.png)<img width="1710" height="952" alt="preview" src="https://github.com/user-attachments/assets/f0262987-c75a-43fb-8f10-22b3e3d1ecf0" />
+<img width="1710" height="952" alt="preview" src="https://github.com/user-attachments/assets/f0262987-c75a-43fb-8f10-22b3e3d1ecf0" />
 
 
 ---
