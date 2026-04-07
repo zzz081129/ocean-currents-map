@@ -89,7 +89,7 @@ const cameraState = {
   y: 0,
   width: svgSize.width,
   height: svgSize.height,
-  minWidth: 560,
+  minWidth: window.innerWidth < 768 ? 300 : 560,
   maxWidth: svgSize.width + cameraBounds.horizontalPadding * 2,
   isDragging: false,
   pointerId: null,
@@ -3418,4 +3418,9 @@ initializeCameraControls();
   } catch (error) {}
 
   setLanguage(currentLanguage);
+
+  // Update camera minWidth on resize for responsiveness
+  window.addEventListener('resize', () => {
+    cameraState.minWidth = window.innerWidth < 768 ? 300 : 560;
+  });
 })();
